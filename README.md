@@ -25,6 +25,14 @@ Optional werden **Telegram-Benachrichtigungen** bei Zustandswechseln gesendet.
 - `ssh` und optional `curl` installiert
 - Plugin läuft auf **Raspi 2** und überwacht **Raspi 1**
 
+## Installation and Setup 
+- clone project
+    - go to `domoticz/plugins` directory 
+    - clone the project
+        ```bash
+        cd domoticz/plugins
+        git clone https://github.com/schurgan/RaspiWatch.git
+        ```
+        
 ### SSH testen
 ```bash
-ssh user@raspi1 "echo ok"
