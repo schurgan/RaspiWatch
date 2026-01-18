@@ -8,7 +8,7 @@
     </description>
 
     <params>
-        <param field="Address" label="Zu überwachende Raspi IP/Hostname" width="200px" required="true" default="192.168.xxx.xx"/>
+        <param field="Address" label="Monitored Raspi IP/Hostname" width="200px" required="true" default="192.168.178.50"/>
         <param field="Port" label="(unused) Port" width="60px" required="false" default="0"/>
 
         <param field="Mode1" label="SSH User" width="150px" required="true" default="schurgan"/>
@@ -18,6 +18,7 @@
         <param field="Mode4" label="Telegram Bot Token (optional)" width="350px" required="false" default=""/>
         <param field="Mode5" label="Telegram Chat ID (optional)" width="200px" required="false" default=""/>
         <param field="Mode6" label="Telegram Cooldown (s)" width="80px" required="true" default="1800"/>
+        <param field="Mode7" label="Check remote Domoticz (0/1)" width="60px" required="true" default="1"/>
     </params>
 </plugin>
 """
@@ -31,47 +32,75 @@ class BasePlugin:
     def __init__(self):
         self.enabled = True
         self.last_state = None        # None/True/False
+        self.last_domo_state = None   # None/True/False
         self.last_alert_ts = 0
-        self.fast_start = True
-        self.check_interval = 300     # echter SSH-Check alle 5 Minuten
-        self.next_check_ts = 0
         self.fast_start = True        # beim Start einmal schnell prüfen
+        self.first_full_check_done = False
+        self.ssh_check_interval = 600        # z.B. 60s (oder 30/120)
+        self.domoticz_check_interval = 30  # z.B. 5 Minuten
+
+        self.next_ssh_check_ts = 0
+        self.next_domo_check_ts = 0
 
     def onStart(self):
         Domoticz.Log("RaspiWatch: onStart")
 
-        # Parameters
-        self.host = Parameters.get("Address", "").strip()          # Zu überwachende Raspi IP/hostname
-        self.port = Parameters.get("Port", "").strip()             # not used (kept for UI)
-        self.user = Parameters.get("Mode1", "schurgan").strip()    # SSH user
-        self.retries = int(Parameters.get("Mode2", "3"))           # tries per check
-        self.timeout = int(Parameters.get("Mode3", "3"))           # seconds per ssh connect timeout
+        # Domoticz Parameters ist NICHT immer ein dict -> kein .get() verwenden
+        def _p(key, default=""):
+            try:
+                return Parameters[key]
+            except Exception:
+                return default
 
-        # Telegram (optional)
-        self.tg_token = Parameters.get("Mode4", "").strip()
-        self.tg_chatid = Parameters.get("Mode5", "").strip()
-        self.cooldown = int(Parameters.get("Mode6", "1800"))       # seconds
+        self.host = str(_p("Address", "")).strip()
+        self.port = str(_p("Port", "0")).strip()  # unused
+        self.user = str(_p("Mode1", "schurgan")).strip()
+
+        try:
+            self.retries = int(_p("Mode2", "3"))
+        except Exception:
+            self.retries = 3
+
+        try:
+            self.timeout = int(_p("Mode3", "3"))
+        except Exception:
+            self.timeout = 3
+
+        # Telegram
+        self.tg_token = str(_p("Mode4", "")).strip()
+        self.tg_chatid = str(_p("Mode5", "")).strip()
+
+        try:
+            self.cooldown = int(_p("Mode6", "1800"))
+        except Exception:
+            self.cooldown = 1800
+
+        self.check_remote_domoticz = str(_p("Mode7", "1")).strip() == "1"
 
         if not self.host:
-            Domoticz.Error("RaspiWatch: No Address configured (Zu überwachende Raspi IP/hostname).")
+            Domoticz.Error("RaspiWatch: No Address configured.")
             self.enabled = False
             return
 
-        # Create device if missing
-        # Unit 1 = Switch
+        # Device Unit 1: SSH reachable
         if 1 not in Devices:
-            Domoticz.Device(
-                Name="Raspi Reachable",
-                Unit=1,
-                TypeName="Switch",
-                Used=1
-            ).Create()
+            Domoticz.Device(Name="Monitored Raspi", Unit=1, TypeName="Switch", Used=1).Create()
 
-        # Heartbeat interval in seconds
-        Domoticz.Heartbeat(30)  # check every 30s (change if you want)
+        # Device Unit 2: Remote Domoticz running
+        if 2 not in Devices:
+            Domoticz.Device(Name="Remote Domoticz Running", Unit=2, TypeName="Switch", Used=1).Create()
+
+        # Heartbeat small (Domoticz stability)
+        Domoticz.Heartbeat(30)
 
         Domoticz.Log(
-            f"RaspiWatch: Monitoring {self.user}@{self.host}, retries={self.retries}, timeout={self.timeout}s, telegram={'on' if self.tg_token and self.tg_chatid else 'off'}"
+            "RaspiWatch: Monitoring {}@{}, retries={}, timeout={}s, telegram={}".format(
+                self.user,
+                self.host,
+                self.retries,
+                self.timeout,
+                "on" if (self.tg_token and self.tg_chatid) else "off",
+            )
         )
 
     def onStop(self):
@@ -80,42 +109,127 @@ class BasePlugin:
     def onHeartbeat(self):
         if not self.enabled:
             return
-        
+
         if 1 not in Devices:
-                return
-        now = time.time()
-
-        # beim Start einmal sofort prüfen, danach nur alle check_interval Sekunden
-        if self.fast_start:
-            self.fast_start = False
-        else:
-            if now < self.next_check_ts:
-                return
-
-        self.next_check_ts = now + self.check_interval
-        
-        ok = self._check_ssh()
-
-        # Update switch: On=reachable, Off=down
-        new_level = 1 if ok else 0
-        dev = Devices[1]
-        if dev.nValue != new_level:
-            dev.Update(nValue=new_level, sValue=str(new_level))
-            Domoticz.Log(f"RaspiWatch: State changed -> {'UP' if ok else 'DOWN'}")
-
-        # Telegram on transitions (UP->DOWN and DOWN->UP)
-        if self.last_state is None:
-            self.last_state = ok
             return
 
-        if ok != self.last_state:
+        now = time.time()
+
+        # Decide whether checks are due
+        do_ssh = now >= self.next_ssh_check_ts
+        do_domo = now >= self.next_domo_check_ts
+
+        if not do_ssh and not do_domo:
+            return
+
+        # Determine current SSH state (ok)
+        if do_ssh:
+            ok = self._check_ssh()
+            self.next_ssh_check_ts = now + self.ssh_check_interval
+
+            # Update Unit 1
+            dev1 = Devices[1]
             if ok:
-                self._maybe_send_telegram(f"🟢 WIEDER OK\nRaspi ({self.host}) ist wieder erreichbar.\nZeit: {time.strftime('%d.%m.%Y %H:%M:%S')}", bypass_cooldown=True)
+                if dev1.nValue != 1:
+                    dev1.Update(nValue=1, sValue="On")
             else:
-                self._maybe_send_telegram(f"🚨 ALARM 🚨\nRaspi ({self.host}) reagiert NICHT auf SSH.\nZeit: {time.strftime('%d.%m.%Y %H:%M:%S')}", bypass_cooldown=False)
-            self.last_state = ok
+                if dev1.nValue != 0:
+                    dev1.Update(nValue=0, sValue="Off")
+
+            # Telegram ONLY when we actually performed an SSH check
+            prev = self.last_state
+            if prev is None:
+                self.last_state = ok
+            else:
+                if ok != prev:
+                    if ok:
+                        self._maybe_send_telegram(
+                            "🟢 WIEDER OK\nMonitored Raspi ({}) ist wieder erreichbar.\nZeit: {}".format(
+                                self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                            ),
+                            bypass_cooldown=True,
+                        )
+                    else:
+                        self._maybe_send_telegram(
+                            "🚨 ALARM 🚨\nMonitored Raspi ({}) reagiert NICHT auf SSH.\nZeit: {}".format(
+                                self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                            ),
+                            bypass_cooldown=True,
+                        )
+                    self.last_state = ok
+        else:
+            # No new SSH check -> use current device state
+            ok = (Devices[1].nValue == 1)
+
+        # Remote Domoticz check (independent schedule), only if enabled and host is reachable
+        if self.check_remote_domoticz and (2 in Devices):
+            dev2 = Devices[2]
+
+            if ok and do_domo:
+                domo_ok = self._check_remote_domoticz()
+                self.next_domo_check_ts = now + self.domoticz_check_interval
+
+                # Update Unit 2 switch
+                if domo_ok:
+                    if dev2.nValue != 1:
+                        dev2.Update(nValue=1, sValue="On")
+                else:
+                    if dev2.nValue != 0:
+                        dev2.Update(nValue=0, sValue="Off")
+
+                # Telegram for Domoticz service transitions
+                prev_d = self.last_domo_state
+                if prev_d is None:
+                    self.last_domo_state = domo_ok
+                else:
+                    if domo_ok != prev_d:
+                        if domo_ok:
+                            self._maybe_send_telegram(
+                                "🟢 DOMOTICZ OK\nRemote Domoticz auf {} läuft wieder.\nZeit: {}".format(
+                                    self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                                ),
+                                bypass_cooldown=True,
+                            )
+                        else:
+                            self._maybe_send_telegram(
+                                "🚨 DOMOTICZ DOWN 🚨\nRemote Domoticz auf {} läuft NICHT.\nZeit: {}".format(
+                                    self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                                ),
+                                bypass_cooldown=True,
+                            )
+                        self.last_domo_state = domo_ok
+
+            elif not ok:
+                if dev2.nValue != 0:
+                    dev2.Update(nValue=0, sValue="Off")
+                self.last_domo_state = None
 
     # ---------------- internals ----------------
+
+    def _check_remote_domoticz(self) -> bool:
+        """
+        Prüft auf dem entfernten Raspi via SSH, ob der Domoticz-Dienst läuft (systemd).
+        return True  -> domoticz ist active
+        return False -> domoticz ist nicht active / Befehl fehlgeschlagen
+        """
+        cmd = [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", f"ConnectTimeout={self.timeout}",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ServerAliveInterval=2",
+            "-o", "ServerAliveCountMax=1",
+            f"{self.user}@{self.host}",
+            "systemctl is-active --quiet domoticz"
+        ]
+
+        for _ in range(1, self.retries + 1):
+            p = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if p.returncode == 0:
+                return True
+            time.sleep(2)
+
+        return False
 
     def _check_ssh(self) -> bool:
         """
