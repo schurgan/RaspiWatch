@@ -37,10 +37,17 @@ class BasePlugin:
         self.fast_start = True        # beim Start einmal schnell prüfen
         self.first_full_check_done = False
         self.ssh_check_interval = 300        # z.B. 60s (oder 30/120)
-        self.domoticz_check_interval = 360  # z.B. 5 Minuten
+        self.domoticz_check_interval = 30  # z.B. 5 Minuten
 
         self.next_ssh_check_ts = 0
         self.next_domo_check_ts = 0
+        
+        self.auto_restart_domoticz = True
+        self.domo_restart_interval = 600   # mindestens 10 Minuten
+        self.domo_restart_max = 2           # max. Versuche
+        self.domo_restart_count = 0
+        self.next_domo_restart_ts = 0
+
 
     def onStart(self):
         Domoticz.Log("RaspiWatch: onStart")
@@ -190,6 +197,8 @@ class BasePlugin:
                                 ),
                                 bypass_cooldown=True,
                             )
+                            self.domo_restart_count = 0
+                            self.next_domo_restart_ts = 0
                         else:
                             self._maybe_send_telegram(
                                 "🚨 DOMOTICZ DOWN 🚨\nRemote Domoticz auf {} läuft NICHT.\nZeit: {}".format(
@@ -197,12 +206,29 @@ class BasePlugin:
                                 ),
                                 bypass_cooldown=True,
                             )
+
+                            # Auto-Restart versuchen (begrenzt)
+                            now2 = time.time()
+                            if self.auto_restart_domoticz:
+                                if (self.domo_restart_count < self.domo_restart_max) and (now2 >= self.next_domo_restart_ts):
+                                    self._maybe_send_telegram(
+                                        "🔄 Neustartversuch Domoticz auf {}\nZeit: {}".format(
+                                            self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                                        ),
+                                        bypass_cooldown=True,
+                                    )
+                                    self._restart_remote_domoticz()
+                                    self.domo_restart_count += 1
+                                    self.next_domo_restart_ts = now2 + self.domo_restart_interval
+
                         self.last_domo_state = domo_ok
 
             elif not ok:
                 if dev2.nValue != 0:
                     dev2.Update(nValue=0, sValue="Off")
                 self.last_domo_state = None
+                self.domo_restart_count = 0
+                self.next_domo_restart_ts = 0
 
     # ---------------- internals ----------------
 
@@ -231,6 +257,16 @@ class BasePlugin:
 
         return False
 
+    def _restart_remote_domoticz(self):
+        cmd = [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", f"ConnectTimeout={self.timeout}",
+            f"{self.user}@{self.host}",
+            "sudo systemctl restart domoticz"
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
     def _check_ssh(self) -> bool:
         """
         Uses system ssh client with strict timeouts.
