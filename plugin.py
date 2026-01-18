@@ -36,7 +36,7 @@ class BasePlugin:
         self.last_alert_ts = 0
         self.fast_start = True        # beim Start einmal schnell prüfen
         self.first_full_check_done = False
-        self.ssh_check_interval = 600        # z.B. 60s (oder 30/120)
+        self.ssh_check_interval = 20        # z.B. 60s (oder 30/120)
         self.domoticz_check_interval = 30  # z.B. 5 Minuten
 
         self.next_ssh_check_ts = 0
