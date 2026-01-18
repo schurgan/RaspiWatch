@@ -8,7 +8,7 @@
     </description>
 
     <params>
-        <param field="Address" label="Raspi Garten IP/Hostname" width="200px" required="true" default="192.168.178.50"/>
+        <param field="Address" label="Zu überwachende Raspi IP/Hostname" width="200px" required="true" default="192.168.xxx.xx"/>
         <param field="Port" label="(unused) Port" width="60px" required="false" default="0"/>
 
         <param field="Mode1" label="SSH User" width="150px" required="true" default="schurgan"/>
@@ -41,7 +41,7 @@ class BasePlugin:
         Domoticz.Log("RaspiWatch: onStart")
 
         # Parameters
-        self.host = Parameters.get("Address", "").strip()          # Raspi Garten IP/hostname
+        self.host = Parameters.get("Address", "").strip()          # Zu überwachende Raspi IP/hostname
         self.port = Parameters.get("Port", "").strip()             # not used (kept for UI)
         self.user = Parameters.get("Mode1", "schurgan").strip()    # SSH user
         self.retries = int(Parameters.get("Mode2", "3"))           # tries per check
@@ -53,7 +53,7 @@ class BasePlugin:
         self.cooldown = int(Parameters.get("Mode6", "1800"))       # seconds
 
         if not self.host:
-            Domoticz.Error("RaspiWatch: No Address configured (Raspi Garten IP/hostname).")
+            Domoticz.Error("RaspiWatch: No Address configured (Zu überwachende Raspi IP/hostname).")
             self.enabled = False
             return
 
@@ -61,7 +61,7 @@ class BasePlugin:
         # Unit 1 = Switch
         if 1 not in Devices:
             Domoticz.Device(
-                Name="Raspi Garten Reachable",
+                Name="Raspi Reachable",
                 Unit=1,
                 TypeName="Switch",
                 Used=1
@@ -110,9 +110,9 @@ class BasePlugin:
 
         if ok != self.last_state:
             if ok:
-                self._maybe_send_telegram(f"🟢 WIEDER OK\nRaspi Garten ({self.host}) ist wieder erreichbar.\nZeit: {time.strftime('%d.%m.%Y %H:%M:%S')}", bypass_cooldown=True)
+                self._maybe_send_telegram(f"🟢 WIEDER OK\nRaspi ({self.host}) ist wieder erreichbar.\nZeit: {time.strftime('%d.%m.%Y %H:%M:%S')}", bypass_cooldown=True)
             else:
-                self._maybe_send_telegram(f"🚨 ALARM 🚨\nRaspi Garten ({self.host}) reagiert NICHT auf SSH.\nZeit: {time.strftime('%d.%m.%Y %H:%M:%S')}", bypass_cooldown=False)
+                self._maybe_send_telegram(f"🚨 ALARM 🚨\nRaspi ({self.host}) reagiert NICHT auf SSH.\nZeit: {time.strftime('%d.%m.%Y %H:%M:%S')}", bypass_cooldown=False)
             self.last_state = ok
 
     # ---------------- internals ----------------
