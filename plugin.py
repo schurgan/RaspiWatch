@@ -1,6 +1,6 @@
 """
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin key="RaspiWatch" name="Raspi Watch (SSH)" author="Alex" version="0.1.0">
+<plugin key="RaspiWatch" name="Raspi Watch (SSH)" author="Alex" version="0.1.2">
     <description>
         Monitors a remote Raspberry Pi via SSH from this Domoticz host.
         Creates one Switch device: ON = reachable, OFF = down.
