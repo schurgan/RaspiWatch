@@ -34,8 +34,8 @@ class BasePlugin:
         self.last_state = None        # None/True/False
         self.last_domo_state = None   # None/True/False
         self.last_alert_ts = 0
-        self.ssh_check_interval = 300        # z.B. 60s (oder 30/120)
-        self.domoticz_check_interval = 360  # z.B. 5 Minuten
+        self.ssh_check_interval = 60        # z.B. 60s (oder 30/120)
+        self.domoticz_check_interval = 65  # z.B. 5 Minuten
 
         self.next_ssh_check_ts = 0
         self.next_domo_check_ts = 0
@@ -49,7 +49,7 @@ class BasePlugin:
         # Down-Filter (gegen nächtliche Zwangstrennung)
         self.down_since = None
         self.down_alarm_sent = False
-        self.down_alarm_threshold = 180  # Sekunden (z.B. 180 = 3 Minuten)
+        self.down_alarm_threshold = 30  # Sekunden (z.B. 180 = 3 Minuten)
 
     def onStart(self):
         Domoticz.Log("RaspiWatch: onStart")
