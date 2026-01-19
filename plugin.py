@@ -31,25 +31,25 @@ import os
 class BasePlugin:
     def __init__(self):
         self.enabled = True
-        self.last_state = None        # None/True/False
-        self.last_domo_state = None   # None/True/False
+        self.last_state = None               # None/True/False
+        self.last_domo_state = None          # None/True/False
         self.last_alert_ts = 0
-        self.ssh_check_interval = 60        # z.B. 60s (oder 30/120)
-        self.domoticz_check_interval = 65  # z.B. 5 Minuten
+        self.ssh_check_interval = 180        # z.B. 60s (oder 30/120)
+        self.domoticz_check_interval = 300   # z.B. 5 Minuten
 
         self.next_ssh_check_ts = 0
         self.next_domo_check_ts = 0
 
         self.auto_restart_domoticz = True
-        self.domo_restart_interval = 600   # mindestens 10 Minuten
-        self.domo_restart_max = 2           # max. Versuche
+        self.domo_restart_interval = 600     # mindestens 10 Minuten
+        self.domo_restart_max = 2            # max. Versuche
         self.domo_restart_count = 0
         self.next_domo_restart_ts = 0
 
         # Down-Filter (gegen nächtliche Zwangstrennung)
         self.down_since = None
         self.down_alarm_sent = False
-        self.down_alarm_threshold = 30  # Sekunden (z.B. 180 = 3 Minuten)
+        self.down_alarm_threshold = 180      # Sekunden (z.B. 180 = 3 Minuten)
 
     def onStart(self):
         Domoticz.Log("RaspiWatch: onStart")
