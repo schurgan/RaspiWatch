@@ -39,7 +39,7 @@ class BasePlugin:
 
         self.next_ssh_check_ts = 0
         self.next_domo_check_ts = 0
-        
+
         self.auto_restart_domoticz = True
         self.domo_restart_interval = 600   # mindestens 10 Minuten
         self.domo_restart_max = 2           # max. Versuche
@@ -240,12 +240,12 @@ class BasePlugin:
                                     self.domo_restart_count += 1
                                     self.next_domo_restart_ts = now2 + self.domo_restart_interval
 
-                         = domo_ok
+                        self.last_domo_state = domo_ok
 
             elif not ok:
                 if dev2.nValue != 0:
                     dev2.Update(nValue=0, sValue="Off")
-                 = None
+                self.last_domo_state = None
                 self.domo_restart_count = 0
                 self.next_domo_restart_ts = 0
 
@@ -289,7 +289,7 @@ class BasePlugin:
         ]
 
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
+
     def _check_ssh(self) -> bool:
         """
         Uses system ssh client with strict timeouts.
