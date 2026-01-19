@@ -34,8 +34,6 @@ class BasePlugin:
         self.last_state = None        # None/True/False
         self.last_domo_state = None   # None/True/False
         self.last_alert_ts = 0
-        self.fast_start = True        # beim Start einmal schnell prüfen
-        self.first_full_check_done = False
         self.ssh_check_interval = 300        # z.B. 60s (oder 30/120)
         self.domoticz_check_interval = 360  # z.B. 5 Minuten
 
@@ -48,7 +46,7 @@ class BasePlugin:
         self.domo_restart_count = 0
         self.next_domo_restart_ts = 0
 
-         # Down-Filter (gegen nächtliche Zwangstrennung)
+        # Down-Filter (gegen nächtliche Zwangstrennung)
         self.down_since = None
         self.down_alarm_sent = False
         self.down_alarm_threshold = 180  # Sekunden (z.B. 180 = 3 Minuten)
@@ -206,9 +204,9 @@ class BasePlugin:
                         dev2.Update(nValue=0, sValue="Off")
 
                 # Telegram for Domoticz service transitions
-                prev_d = self.last_domo_state
+                prev_d = 
                 if prev_d is None:
-                    self.last_domo_state = domo_ok
+                     = domo_ok
                 else:
                     if domo_ok != prev_d:
                         if domo_ok:
@@ -242,12 +240,12 @@ class BasePlugin:
                                     self.domo_restart_count += 1
                                     self.next_domo_restart_ts = now2 + self.domo_restart_interval
 
-                        self.last_domo_state = domo_ok
+                         = domo_ok
 
             elif not ok:
                 if dev2.nValue != 0:
                     dev2.Update(nValue=0, sValue="Off")
-                self.last_domo_state = None
+                 = None
                 self.domo_restart_count = 0
                 self.next_domo_restart_ts = 0
 
@@ -283,9 +281,13 @@ class BasePlugin:
             "ssh",
             "-o", "BatchMode=yes",
             "-o", f"ConnectTimeout={self.timeout}",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ServerAliveInterval=2",
+            "-o", "ServerAliveCountMax=1",
             f"{self.user}@{self.host}",
             "sudo systemctl restart domoticz"
         ]
+
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     def _check_ssh(self) -> bool:
