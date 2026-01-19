@@ -48,6 +48,10 @@ class BasePlugin:
         self.domo_restart_count = 0
         self.next_domo_restart_ts = 0
 
+         # Down-Filter (gegen nächtliche Zwangstrennung)
+        self.down_since = None
+        self.down_alarm_sent = False
+        self.down_alarm_threshold = 180  # Sekunden (z.B. 180 = 3 Minuten)
 
     def onStart(self):
         Domoticz.Log("RaspiWatch: onStart")
@@ -143,27 +147,44 @@ class BasePlugin:
                 if dev1.nValue != 0:
                     dev1.Update(nValue=0, sValue="Off")
 
-            # Telegram ONLY when we actually performed an SSH check
-            prev = self.last_state
-            if prev is None:
-                self.last_state = ok
+            # --- Down-Filter + Telegram (nur wenn wir wirklich neu gecheckt haben) ---
+            now_ts = time.time()
+
+            if ok:
+                # Reset DOWN tracking
+                self.down_since = None
+                self.down_alarm_sent = False
+
+                # UP Telegram nur wenn vorher "down" war
+                if self.last_state is False:
+                    self._maybe_send_telegram(
+                        "🟢 WIEDER OK\nMonitored Raspi ({}) ist wieder erreichbar.\nZeit: {}".format(
+                            self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                        ),
+                        bypass_cooldown=True
+                    )
+                self.last_state = True
+
             else:
-                if ok != prev:
-                    if ok:
-                        self._maybe_send_telegram(
-                            "🟢 WIEDER OK\nMonitored Raspi ({}) ist wieder erreichbar.\nZeit: {}".format(
-                                self.host, time.strftime("%d.%m.%Y %H:%M:%S")
-                            ),
-                            bypass_cooldown=True,
-                        )
-                    else:
-                        self._maybe_send_telegram(
-                            "🚨 ALARM 🚨\nMonitored Raspi ({}) reagiert NICHT auf SSH.\nZeit: {}".format(
-                                self.host, time.strftime("%d.%m.%Y %H:%M:%S")
-                            ),
-                            bypass_cooldown=True,
-                        )
-                    self.last_state = ok
+                # Start/continue DOWN tracking
+                if self.down_since is None:
+                    self.down_since = now_ts
+                    self.down_alarm_sent = False
+
+                down_for = int(now_ts - self.down_since)
+
+                # DOWN Telegram erst nach Threshold und nur einmal
+                if (down_for >= self.down_alarm_threshold) and (not self.down_alarm_sent):
+                    self._maybe_send_telegram(
+                        "🚨 ALARM 🚨\nMonitored Raspi ({}) seit {}s NICHT erreichbar (SSH).\nZeit: {}".format(
+                            self.host, down_for, time.strftime("%d.%m.%Y %H:%M:%S")
+                        ),
+                        bypass_cooldown=True
+                    )
+                    self.down_alarm_sent = True
+
+                self.last_state = False
+
         else:
             # No new SSH check -> use current device state
             ok = (Devices[1].nValue == 1)
