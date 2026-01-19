@@ -204,9 +204,9 @@ class BasePlugin:
                         dev2.Update(nValue=0, sValue="Off")
 
                 # Telegram for Domoticz service transitions
-                prev_d = 
+                prev_d = self.last_domo_state
                 if prev_d is None:
-                     = domo_ok
+                    self.last_domo_state = domo_ok
                 else:
                     if domo_ok != prev_d:
                         if domo_ok:
