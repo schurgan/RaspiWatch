@@ -34,7 +34,7 @@ class BasePlugin:
         self.last_state = None               # None/True/False
         self.last_domo_state = None          # None/True/False
         self.last_alert_ts = 0
-        self.ssh_check_interval = 210        # z.B. 60s (oder 30/120)
+        self.ssh_check_interval = 240        # z.B. 60s (oder 30/120)
         self.domoticz_check_interval = 300   # z.B. 5 Minuten
 
         self.next_ssh_check_ts = 0
