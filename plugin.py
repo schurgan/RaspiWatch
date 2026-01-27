@@ -39,7 +39,8 @@ class BasePlugin:
 
         self.next_ssh_check_ts = 0
         self.next_domo_check_ts = 0
-
+        self.domo_fail_count = 0
+        self.domo_fail_threshold = 2         # erst nach 2x DOWN reagieren
         self.auto_restart_domoticz = True
         self.domo_restart_interval = 600     # mindestens 10 Minuten
         self.domo_restart_max = 2            # max. Versuche
@@ -196,54 +197,63 @@ class BasePlugin:
 
             if ok and do_domo:
                 domo_ok = self._check_remote_domoticz()
-                self.next_domo_check_ts = now + self.domoticz_check_interval
+                    self.next_domo_check_ts = now + self.domoticz_check_interval
 
-                # Update Unit 2 switch
                 if domo_ok:
+                    # Domoticz ist OK -> alles zurücksetzen
+                    self.domo_fail_count = 0
+
                     if dev2.nValue != 1:
                         dev2.Update(nValue=1, sValue="On")
+
+                    if self.last_domo_state is False:
+                        self._maybe_send_telegram(
+                            "🟢 DOMOTICZ OK\nRemote Domoticz auf {} läuft wieder.\nZeit: {}".format(
+                                self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                            ),
+                            bypass_cooldown=True
+                        )
+
+                    self.last_domo_state = True
+                    self.domo_restart_count = 0
+                    self.next_domo_restart_ts = 0
+
                 else:
+                    # Domoticz DOWN erkannt
+                    self.domo_fail_count += 1
+
+                    # Anzeige sofort auf OFF
                     if dev2.nValue != 0:
                         dev2.Update(nValue=0, sValue="Off")
 
-                # Telegram for Domoticz service transitions
-                prev_d = self.last_domo_state
-                if prev_d is None:
-                    self.last_domo_state = domo_ok
-                else:
-                    if domo_ok != prev_d:
-                        if domo_ok:
+                    # Erst reagieren, wenn 2 Prüfungen hintereinander DOWN waren
+                    if self.domo_fail_count >= self.domo_fail_threshold:
+                        if self.last_domo_state is not False:
                             self._maybe_send_telegram(
-                                "🟢 DOMOTICZ OK\nRemote Domoticz auf {} läuft wieder.\nZeit: {}".format(
-                                    self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                                "🚨 DOMOTICZ DOWN 🚨\nRemote Domoticz auf {} reagiert seit {} Prüfungen NICHT.\nZeit: {}".format(
+                                    self.host,
+                                    self.domo_fail_count,
+                                    time.strftime("%d.%m.%Y %H:%M:%S")
                                 ),
-                                bypass_cooldown=True,
-                            )
-                            self.domo_restart_count = 0
-                            self.next_domo_restart_ts = 0
-                        else:
-                            self._maybe_send_telegram(
-                                "🚨 DOMOTICZ DOWN 🚨\nRemote Domoticz auf {} läuft NICHT.\nZeit: {}".format(
-                                    self.host, time.strftime("%d.%m.%Y %H:%M:%S")
-                                ),
-                                bypass_cooldown=True,
+                                bypass_cooldown=True
                             )
 
-                            # Auto-Restart versuchen (begrenzt)
-                            now2 = time.time()
-                            if self.auto_restart_domoticz:
-                                if (self.domo_restart_count < self.domo_restart_max) and (now2 >= self.next_domo_restart_ts):
-                                    self._maybe_send_telegram(
-                                        "🔄 Neustartversuch Domoticz auf {}\nZeit: {}".format(
-                                            self.host, time.strftime("%d.%m.%Y %H:%M:%S")
-                                        ),
-                                        bypass_cooldown=True,
-                                    )
-                                    self._restart_remote_domoticz()
-                                    self.domo_restart_count += 1
-                                    self.next_domo_restart_ts = now2 + self.domo_restart_interval
+                        # Auto-Restart (begrenzt)
+                        now2 = time.time()
+                        if self.auto_restart_domoticz:
+                            if (self.domo_restart_count < self.domo_restart_max) and (now2 >= self.next_domo_restart_ts):
+                                self._maybe_send_telegram(
+                                    "🔄 Neustartversuch Domoticz auf {}\nZeit: {}".format(
+                                        self.host, time.strftime("%d.%m.%Y %H:%M:%S")
+                                    ),
+                                    bypass_cooldown=True
+                                )
+                                self._restart_remote_domoticz()
+                                self.domo_restart_count += 1
+                                self.next_domo_restart_ts = now2 + self.domo_restart_interval
 
-                        self.last_domo_state = domo_ok
+                        self.last_domo_state = False
+
 
             elif not ok:
                 if dev2.nValue != 0:
