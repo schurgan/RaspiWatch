@@ -259,6 +259,7 @@ class BasePlugin:
                 if dev2.nValue != 0:
                     dev2.Update(nValue=0, sValue="Off")
                 self.last_domo_state = None
+                self.domo_fail_count = 0      # <<< wichtig
                 self.domo_restart_count = 0
                 self.next_domo_restart_ts = 0
 
