@@ -127,6 +127,9 @@ class BasePlugin:
         # Decide whether checks are due
         do_ssh = now >= self.next_ssh_check_ts
         do_domo = now >= self.next_domo_check_ts
+        # Wichtig: Domoticz-Check nur mit frischem SSH-Status
+        if do_domo:
+            do_ssh = True
 
         if not do_ssh and not do_domo:
             return
