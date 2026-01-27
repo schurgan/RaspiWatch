@@ -197,7 +197,7 @@ class BasePlugin:
 
             if ok and do_domo:
                 domo_ok = self._check_remote_domoticz()
-                    self.next_domo_check_ts = now + self.domoticz_check_interval
+                self.next_domo_check_ts = now + self.domoticz_check_interval
 
                 if domo_ok:
                     # Domoticz ist OK -> alles zurücksetzen
